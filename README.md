@@ -287,7 +287,7 @@ cd order-management
 #### Manual Start
 
 ```bash
-dockercompose up -d --build
+docker compose up -d --build
 ```
 
 ### 3. Verify Services
