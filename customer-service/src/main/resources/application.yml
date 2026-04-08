@@ -1,0 +1,125 @@
+# Customer Service Configuration
+spring:
+  application:
+    name: customer-service
+  config:
+    import: optional:consul:consul:8500
+
+  # PostgreSQL 17 Configuration
+  datasource:
+    url: jdbc:postgresql://postgres:5432/customerdb
+    username: admin
+    password: admin123
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: CustomerServiceHikariPool
+
+  # JPA & Hibernate untuk PostgreSQL 17
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        batch_versioned_data: true
+        default_schema: public
+
+  # Consul Configuration
+  cloud:
+    compatibility-verifier:
+      enabled: false
+    consul:
+      host: consul
+      port: 8500
+      discovery:
+        service-name: ${spring.application.name}
+        prefer-ip-address: true
+        health-check-interval: 15s
+        health-check-path: /actuator/health
+        instance-id: ${spring.application.name}:${server.port}
+        tags:
+          - api-rest
+          - postgres-17
+          - java-21
+          - spring-boot-3.5.13
+        metadata:
+          java-version: "21"
+          spring-boot-version: "3.5.13"
+          postgres-version: "17"
+      config:
+        enabled: true
+        format: YAML
+        fail-fast: true
+        watch:
+          enabled: true
+          delay: 1000
+
+# Server Configuration
+server:
+  port: 8083
+  compression:
+    enabled: true
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+
+# Actuator untuk monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,beans
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# SpringDoc OpenAPI Configuration
+springdoc:
+  api-docs:
+    enabled: true
+    path: /api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    display-request-duration: true
+    operations-sorter: method
+    tags-sorter: alpha
+  packages-to-scan: com.customerservice
+  paths-to-match: /api/**
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.customerservice: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

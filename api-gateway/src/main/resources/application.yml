@@ -1,0 +1,132 @@
+# API Gateway Configuration
+spring:
+  application:
+    name: api-gateway
+  config:
+    import: optional:consul:consul:8500
+
+  # Cloud Gateway Configuration
+  cloud:
+    compatibility-verifier:
+      enabled: false
+    consul:
+      host: consul
+      port: 8500
+      discovery:
+        service-name: ${spring.application.name}
+        prefer-ip-address: true
+        health-check-interval: 15s
+        health-check-path: /actuator/health
+        instance-id: ${spring.application.name}:${server.port}
+        tags:
+          - api-gateway
+          - java-21
+          - spring-boot-3.5.13
+          - spring-cloud-gateway
+        metadata:
+          java-version: "21"
+          spring-boot-version: "3.5.13"
+      config:
+        enabled: true
+        format: YAML
+        fail-fast: false
+        watch:
+          enabled: false
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        # Order Service Routes
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/api/orders/**
+          filters:
+            - StripPrefix=0
+
+        # Product Service Routes
+        - id: product-service
+          uri: lb://product-service
+          predicates:
+            - Path=/api/products/**, /api/categories/**
+          filters:
+            - StripPrefix=0
+
+        # Customer Service Routes
+        - id: customer-service
+          uri: lb://customer-service
+          predicates:
+            - Path=/api/customers/**
+          filters:
+            - StripPrefix=0
+
+  # PostgreSQL Configuration for User Authentication
+  datasource:
+    url: jdbc:postgresql://postgres:5432/userdb
+    username: admin
+    password: admin123
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+
+# Server Configuration
+server:
+  port: 8080
+  compression:
+    enabled: true
+
+# JWT Configuration
+jwt:
+  secret: 5a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b
+  expiration: 86400000 # 24 hours in milliseconds
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+
+# SpringDoc OpenAPI Configuration for WebFlux
+springdoc:
+  api-docs:
+    enabled: true
+    path: /api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    display-request-duration: true
+    operations-sorter: method
+    tags-sorter: alpha
+  packages-to-scan: com.apigateway
+  paths-to-match: /api/**
+  show-actuator: false
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.apigateway: DEBUG
+    com.apigateway.util.JwtUtil: DEBUG
+    com.apigateway.filter.JwtAuthenticationFilter: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

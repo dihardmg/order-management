@@ -1,0 +1,374 @@
+# 🚀 Order Management Microservices - Production Docker Compose
+# Optimized for VPS Bisnet: 2 vCPU, 4 GB RAM, 60 GB Disk
+# This is the production-ready docker-compose configuration
+
+version: '3.8'
+
+services:
+  # ========================================
+  # INFRASTRUCTURE SERVICES
+  # ========================================
+
+  # Consul - Service Discovery
+  consul:
+    image: hashicorp/consul:1.15
+    container_name: consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    environment:
+      CONSUL_BIND_INTERFACE: 0.0.0.0
+      CONSUL_CLIENT_INTERFACE: 0.0.0.0
+      CONSUL_UI_LOCAL_ENABLED: "false"
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8500/v1/status/leader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # PostgreSQL 17 - Main Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_MULTIPLE_DATABASES: productdb,customerdb,userdb
+      # Memory optimizations for 4 GB RAM
+      POSTGRES_SHARED_BUFFERS: 128MB
+      POSTGRES_WORK_MEM: 32MB
+      POSTGRES_MAINTENANCE_WORK_MEM: 128MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 256MB
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-postgres-fixed.sh:/docker-entrypoint-initdb.d/init-postgres-fixed.sh
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d orderdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # pgAdmin 4 v9.14 - Database Management UI (OPTIONAL - Comment out for production)
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: pgadmin
+  #   ports:
+  #     - "5050:80"
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@admin.com
+  #     PGADMIN_DEFAULT_PASSWORD: admin123
+  #     PGADMIN_CONFIG_SERVER_MODE: 'False'
+  #   volumes:
+  #     - pgadmin_data:/var/lib/pgadmin
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - microservices-network
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/misc/ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+  #   restart: unless-stopped
+
+  # ========================================
+  # MICROSERVICES
+  # ========================================
+
+  # Order Service
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: order-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_APPLICATION_NAME: order-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/orderdb
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: admin123
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: false
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_CLOUD_CONSUL_DISCOVERY_SERVICE_NAME: order-service
+      SPRING_CLOUD_CONSUL_DISCOVERY_PREFER_IP_ADDRESS: true
+      SPRING_CLOUD_CONSUL_DISCOVERY_HEALTH_CHECK_PATH: /actuator/health
+      SPRING_CLOUD_CONSUL_DISCOVERY_HEALTH_CHECK_INTERVAL: 15s
+      SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: true
+      SERVER_PORT: 8081
+      # OPTIMIZED FOR 4 GB RAM - Reduced from 512m to 384m
+      JAVA_OPTS: >
+        -XX:+UseZGC
+        -Xms192m
+        -Xmx384m
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseStringDeduplication
+        -XX:+OptimizeStringConcat
+        -Djava.awt.headless=true
+        -Dspring.jmx.default-domain=order-service
+        -Dspring.application.admin.enabled=false
+      SPRING_PRODUCTION_ENABLED: true
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_ORDERMANAGEMENTSERVICE: INFO
+      # Actuator - Minimal in production
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
+      MANAGEMENT_ENDPOINTS_HEALTH_SHOW-DETAILS: when-authorized
+    depends_on:
+      postgres:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Product Service
+  product-service:
+    build:
+      context: ./product-service
+      dockerfile: Dockerfile
+    container_name: product-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_APPLICATION_NAME: product-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/productdb
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: admin123
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: false
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_CLOUD_CONSUL_DISCOVERY_SERVICE_NAME: product-service
+      SPRING_CLOUD_CONSUL_DISCOVERY_PREFER_IP_ADDRESS: true
+      SPRING_CLOUD_CONSUL_DISCOVERY_HEALTH_CHECK_PATH: /actuator/health
+      SPRING_CLOUD_CONSUL_DISCOVERY_HEALTH_CHECK_INTERVAL: 15s
+      SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: true
+      SERVER_PORT: 8082
+      # OPTIMIZED FOR 4 GB RAM
+      JAVA_OPTS: >
+        -XX:+UseZGC
+        -Xms192m
+        -Xmx384m
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseStringDeduplication
+        -XX:+OptimizeStringConcat
+        -Djava.awt.headless=true
+        -Dspring.jmx.default-domain=product-service
+        -Dspring.application.admin.enabled=false
+      SPRING_PRODUCTION_ENABLED: true
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_PRODUCTSERVICE: INFO
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
+      MANAGEMENT_ENDPOINTS_HEALTH_SHOW_DETAILS: when-authorized
+    depends_on:
+      postgres:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Customer Service
+  customer-service:
+    build:
+      context: ./customer-service
+      dockerfile: Dockerfile
+    container_name: customer-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_APPLICATION_NAME: customer-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/customerdb
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: admin123
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: false
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_CLOUD_CONSUL_DISCOVERY_SERVICE_NAME: customer-service
+      SPRING_CLOUD_CONSUL_DISCOVERY_PREFER_IP_ADDRESS: true
+      SPRING_CLOUD_CONSUL_DISCOVERY_HEALTH_CHECK_PATH: /actuator/health
+      SPRING_CLOUD_CONSUL_DISCOVERY_HEALTH_CHECK_INTERVAL: 15s
+      SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: true
+      SERVER_PORT: 8083
+      # OPTIMIZED FOR 4 GB RAM
+      JAVA_OPTS: >
+        -XX:+UseZGC
+        -Xms192m
+        -Xmx384m
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseStringDeduplication
+        -XX:+OptimizeStringConcat
+        -Djava.awt.headless=true
+        -Dspring.jmx.default-domain=customer-service
+        -Dspring.application.admin.enabled=false
+      SPRING_PRODUCTION_ENABLED: true
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_CUSTOMERSERVICE: INFO
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
+      MANAGEMENT_ENDPOINTS_HEALTH_SHOW_DETAILS: when-authorized
+    depends_on:
+      postgres:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_APPLICATION_NAME: api-gateway
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_CLOUD_CONSUL_DISCOVERY_SERVICE_NAME: api-gateway
+      SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: true
+      SPRING_CLOUD_CONSUL_DISCOVERY_PREFER_IP_ADDRESS: true
+      SPRING_CLOUD_GATEWAY_DISCOVERY_LOCATOR_ENABLED: true
+      SPRING_CLOUD_GATEWAY_DISCOVERY_LOCATOR_LOWER_CASE_SERVICE_ID: true
+      SERVER_PORT: 8080
+      # OPTIMIZED FOR 4 GB RAM
+      JAVA_OPTS: >
+        -XX:+UseZGC
+        -Xms192m
+        -Xmx384m
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseStringDeduplication
+        -XX:+OptimizeStringConcat
+        -Djava.awt.headless=true
+        -Dspring.jmx.default-domain=api-gateway
+        -Dspring.application.admin.enabled=false
+      SPRING_PRODUCTION_ENABLED: true
+      LOGGING_LEVEL_ROOT: INFO
+      LOGGING_LEVEL_COM_APIGATEWAY: INFO
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
+      MANAGEMENT_ENDPOINTS_HEALTH_SHOW_DETAILS: always
+    depends_on:
+      consul:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      customer-service:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+# ========================================
+# NETWORKS
+# ========================================
+networks:
+  microservices-network:
+    driver: bridge
+    name: microservices-network
+
+# ========================================
+# VOLUMES
+# ========================================
+volumes:
+  postgres_data:
+    driver: local

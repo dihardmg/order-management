@@ -1,0 +1,107 @@
+# 🚀 Order Management Microservices - Production Configuration
+# This file is loaded when SPRING_PRODUCTION_ENABLED=true
+
+spring:
+  # Disable development features
+  devtools:
+    restart:
+      enabled: false
+
+  # JPA Production Settings
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        show_sql: false
+        generate_statistics: false
+        jdbc:
+          batch_size: 50
+
+  # SQL Logging - Disabled in production
+  sql:
+    init:
+      mode: never
+
+  # Actuator Production Settings
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /actuator
+    endpoint:
+      health:
+        show-details: when-authorized
+        probes:
+          enabled: true
+      info:
+        enabled: true
+    metrics:
+      enabled: false
+  # Disable prometheus in production to save resources
+      export:
+        prometheus:
+          enabled: false
+
+# Logging Production Settings
+logging:
+  level:
+    root: INFO
+    com.ordermanagementservice: INFO
+    com.productservice: INFO
+    com.customerservice: INFO
+    com.apigateway: INFO
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+    org.springframework.web: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/application.log
+    max-size: 10MB
+    max-history: 7
+    total-size-cap: 1GB
+
+# HikariCP Production Settings
+spring:
+  datasource:
+    hikari:
+      # Reduced pool size for 4 GB RAM
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: ProductionHikariPool
+      # Leak detection
+      leak-detection-threshold: 60000
+      # Connection testing
+      connection-test-query: SELECT 1
+      connection-test-timeout: 5000
+
+# Server Production Settings
+server:
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+  tomcat:
+    # Reduced threads for 2 vCPU
+    threads:
+      max: 50
+      min-spare: 5
+    # Access logging - Disabled in production to save I/O
+    accesslog:
+      enabled: false
+
+# Gateway Production Settings
+spring:
+  cloud:
+    gateway:
+      # Disable HTTP tracing to save resources
+      httpserver:
+        trace: false
+      # Disable actuator gateway routes
+      actuator:
+        enabled: false

@@ -1,0 +1,52 @@
+# Order Service Configuration
+spring:
+  application:
+    name: order-service
+  config:
+    import: optional:consul:consul:8500
+
+  # PostgreSQL 17 Configuration
+  datasource:
+    url: jdbc:postgresql://postgres:5432/orderdb
+    username: admin
+    password: admin123
+    driver-class-name: org.postgresql.Driver
+
+  # JPA & Hibernate
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+
+  # Consul Configuration
+  cloud:
+    compatibility-verifier:
+      enabled: false
+    consul:
+      host: consul
+      port: 8500
+      discovery:
+        service-name: ${spring.application.name}
+        prefer-ip-address: true
+
+# Server Configuration
+server:
+  port: 8081
+
+# SpringDoc OpenAPI Configuration
+springdoc:
+  api-docs:
+    enabled: true
+    path: /api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+  packages-to-scan: com.ordermanagementservice
+  paths-to-match: /api/**
+
+# Product Service Configuration
+product:
+  service:
+    base-url: http://product-service:8082
