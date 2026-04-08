@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x docker/init-postgres-fixed.sh setup.sh)"
+    ]
+  }
+}
